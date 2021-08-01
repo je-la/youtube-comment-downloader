@@ -28,6 +28,29 @@ def regex_search(text, pattern, group=1, default=None):
     return match.group(group) if match else default
 
 
+def isCommentAReply(comment):
+    return '.' in comment['commentId']
+
+
+def comment_dict(comment):
+    return {'cid': comment['commentId'],
+           'text': ''.join([c['text'] for c in comment['contentText'].get('runs', [])]),
+           'time': comment['publishedTimeText']['runs'][0]['text'],
+           'author': comment.get('authorText', {}).get('simpleText', ''),
+           'channel': comment['authorEndpoint']['browseEndpoint'].get('browseId', ''),
+           'votes': comment.get('voteCount', {}).get('simpleText', '0'),
+           'photo': comment['authorThumbnail']['thumbnails'][-1]['url'],
+           'heart': next(search_dict(comment, 'isHearted'), False)}
+
+def output_comments(cached_comments_list, cached_replies_dict):
+    for comment in cached_comments_list:
+        cid = comment['commentId']              
+        yield comment_dict(comment)                                           
+        for reply in cached_replies_dict[cid]:
+            yield comment_dict(reply) 
+    
+
+               
 def ajax_request(session, endpoint, ytcfg, retries=5, sleep=20):
     url = 'https://www.youtube.com' + endpoint['commandMetadata']['webCommandMetadata']['apiUrl']
     
@@ -44,7 +67,10 @@ def ajax_request(session, endpoint, ytcfg, retries=5, sleep=20):
             time.sleep(sleep)
 
 
-def download_comments(youtube_id, sort_by=SORT_BY_RECENT, sleep=.1):
+def download_comments(youtube_id, fp, sort_by=SORT_BY_RECENT, sleep=.1):
+    
+    fp1 = io.open('data', 'w', encoding='utf8')
+        
     session = requests.Session()
     session.headers['User-Agent'] = USER_AGENT
 
@@ -57,24 +83,41 @@ def download_comments(youtube_id, sort_by=SORT_BY_RECENT, sleep=.1):
     html = response.text
     ytcfg = json.loads(regex_search(html, YT_CFG_RE, default=''))
     if not ytcfg:
-        return # Unable to extract configuration
+        return  # Unable to extract configuration
 
     data = json.loads(regex_search(html, YT_INITIAL_DATA_RE, default=''))
 
     section = next(search_dict(data, 'itemSectionRenderer'), None)
+    
     renderer = next(search_dict(section, 'continuationItemRenderer'), None) if section else None
+    
     if not renderer:
         # Comments disabled?
         return
 
     needs_sorting = sort_by != SORT_BY_POPULAR
     continuations = [renderer['continuationEndpoint']]
+    
+    cached_comments_list = []
+    cached_replies_dict = {}
+    
     while continuations:
         continuation = continuations.pop()
+        
+        # print("****** ", file=fp)        
+        # print("*** " + str(len(continuations)) + " ***", file=fp)
+        # print("******", file=fp)  
+        
+        continuations_stack_empty = len(continuations) == 0
+        
         response = ajax_request(session, continuation, ytcfg)
 
         if not response:
             break
+        
+        # print(str(response), file=fp1 )
+        # fp1.flush()
+        
         if list(search_dict(response, 'externalErrorMessage')):
             raise RuntimeError('Error returned from server: ' + next(search_dict(response, 'externalErrorMessage')))
 
@@ -96,18 +139,44 @@ def download_comments(youtube_id, sort_by=SORT_BY_RECENT, sleep=.1):
                 if action['targetId'].startswith('comment-replies-item') and 'continuationItemRenderer' in item:
                     # Process the 'Show more replies' button
                     continuations.append(next(search_dict(item, 'buttonRenderer'))['command'])
+        
+        
+        
+        comment_list = list(reversed(list(search_dict(response, 'commentRenderer'))))
+        
+        if len(comment_list) > 0:
+            if continuations_stack_empty and not isCommentAReply(comment_list[0]):
+                
+                # a new comments-replies-bunch starts
+                
+                # output cached comments and replies in youtube-order:
+                for comment in output_comments(cached_comments_list, cached_replies_dict):
+                    yield comment                        
+                
+                # reset caches
+                cached_comments_list = []
+                cached_replies_dict = {}   
+                                     
+                # cache up comments ...
+                for comment in comment_list:
+                    cached_replies_dict[comment['commentId']] = []
+                    cached_comments_list.append(comment)
+                
+            else:
+                # cache up replies ...
+                cid = comment_list[0]['commentId'].split('.')[0]
+                for comment in comment_list:
+                     cached_replies_dict[cid].append(comment)                                          
+                                   
 
-        for comment in reversed(list(search_dict(response, 'commentRenderer'))):
-            yield {'cid': comment['commentId'],
-                   'text': ''.join([c['text'] for c in comment['contentText'].get('runs', [])]),
-                   'time': comment['publishedTimeText']['runs'][0]['text'],
-                   'author': comment.get('authorText', {}).get('simpleText', ''),
-                   'channel': comment['authorEndpoint']['browseEndpoint'].get('browseId', ''),
-                   'votes': comment.get('voteCount', {}).get('simpleText', '0'),
-                   'photo': comment['authorThumbnail']['thumbnails'][-1]['url'],
-                   'heart': next(search_dict(comment, 'isHearted'), False)}
-
+     
         time.sleep(sleep)
+    
+    # output remaining cached comments and replies in youtube-order:
+    for comment in output_comments(cached_comments_list, cached_replies_dict):
+        yield comment
+
+    fp1.close()
 
 
 def search_dict(partial, search_key):
@@ -125,7 +194,7 @@ def search_dict(partial, search_key):
                 stack.append(value)
 
 
-def main(argv = None):
+def main(argv=None):
     parser = argparse.ArgumentParser(add_help=False, description=('Download Youtube comments without using the Youtube API'))
     parser.add_argument('--help', '-h', action='help', default=argparse.SUPPRESS, help='Show this help message and exit')
     parser.add_argument('--youtubeid', '-y', help='ID of Youtube video for which to download the comments')
@@ -156,7 +225,7 @@ def main(argv = None):
             sys.stdout.write('Downloaded %d comment(s)\r' % count)
             sys.stdout.flush()
             start_time = time.time()
-            for comment in download_comments(youtube_id, args.sort):
+            for comment in download_comments(youtube_id, fp, args.sort):
                 comment_json = json.dumps(comment, ensure_ascii=False)
                 print(comment_json.decode('utf-8') if isinstance(comment_json, bytes) else comment_json, file=fp)
                 count += 1
