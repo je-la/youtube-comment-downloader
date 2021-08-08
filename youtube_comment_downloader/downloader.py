@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/python3
 
 from __future__ import print_function
 
@@ -231,7 +231,8 @@ def main(argv=None):
                 
                 # regular json output                               
                 if not first:
-                    print(','.decode('utf-8'), file=fp)
+                    #print(','.decode('utf-8'), file=fp)
+                    print(',', file=fp)
                 else:       
                     first = False
                 
