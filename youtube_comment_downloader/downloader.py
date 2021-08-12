@@ -31,8 +31,8 @@ def regex_search(text, pattern, group=1, default=None):
 def isCommentAReply(comment):
     return '.' in comment['commentId']
 
-
 def comment_dict(comment):
+           
     return {'cid': comment['commentId'],
            'text': ''.join([c['text'] for c in comment['contentText'].get('runs', [])]),
            'time': comment['publishedTimeText']['runs'][0]['text'],
@@ -166,7 +166,7 @@ def download_comments(youtube_id, fp, sort_by=SORT_BY_RECENT, sleep=.1):
                 # cache up replies ...
                 cid = comment_list[0]['commentId'].split('.')[0]
                 for comment in comment_list:
-                     cached_replies_dict[cid].append(comment)                                          
+                    cached_replies_dict[cid].append(comment)                                          
                                    
 
      
@@ -195,6 +195,7 @@ def search_dict(partial, search_key):
 
 
 def main(argv=None):
+      
     parser = argparse.ArgumentParser(add_help=False, description=('Download Youtube comments without using the Youtube API'))
     parser.add_argument('--help', '-h', action='help', default=argparse.SUPPRESS, help='Show this help message and exit')
     parser.add_argument('--youtubeid', '-y', help='ID of Youtube video for which to download the comments')
