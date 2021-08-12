@@ -225,24 +225,16 @@ def main(argv=None):
             sys.stdout.write('Downloaded %d comment(s)\r' % count)
             sys.stdout.flush()
             start_time = time.time()            
-            first = True            
+                    
             for comment in download_comments(youtube_id, fp, args.sort):
                 comment_json = json.dumps(comment, ensure_ascii=False)
-                
-                # regular json output                               
-                if not first:
-                    #print(','.decode('utf-8'), file=fp)
-                    print(',', file=fp)
-                else:       
-                    first = False
-                
                 print(comment_json.decode('utf-8') if isinstance(comment_json, bytes) else comment_json, file=fp)
-                               
                 count += 1
                 sys.stdout.write('Downloaded %d comment(s)\r' % count)
                 sys.stdout.flush()
                 if limit and count >= limit:
                     break
+                              
         print('\n[{:.2f} seconds] Done!'.format(time.time() - start_time))
 
     except Exception as e:
