@@ -3,7 +3,7 @@
 '''
 Created on 08.08.2021
 
-@author: jela
+@author: je-la
 '''
 
 import sys
